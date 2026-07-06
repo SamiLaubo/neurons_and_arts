@@ -1,5 +1,11 @@
 emimesh/
 
+# Local projects
+config_files/single_neuron_processing/
+
+# Paraview
+*.btr
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
