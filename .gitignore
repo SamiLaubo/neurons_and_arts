@@ -1,7 +1,8 @@
 emimesh/
 
 # Local projects
-config_files/single_neuron_processing/
+config_files/**
+
 
 # Paraview
 *.btr
