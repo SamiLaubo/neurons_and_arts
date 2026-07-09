@@ -56,18 +56,23 @@ def calculate_mass_center(mesh):
 
 def visualize_interactive_pyvista(ply_path):
     """Displays an interactive 3D surface using PyVista."""
+    plotter = pv.Plotter()
+    update_interactive_plotter(plotter, ply_path)
+    return plotter.show()
+
+def update_interactive_plotter(plotter, ply_path):
+    """Updates an existing plotter with a new PLY surface."""
     mesh = pv.read(ply_path)
 
     # Center the mesh for better viewing
     mass_center = calculate_mass_center(mesh)
     mesh.translate(-mass_center, inplace=True)
 
-    plotter = pv.Plotter()
+    plotter.clear()
     plotter.add_mesh(mesh, color="lightblue", show_edges=True, edge_color="black", edge_opacity=0.5)
     plotter.set_background("black")
     plotter.view_isometric()
-
-    return plotter.show()
+    plotter.render()
 
 def create_rotation_gif(ply_path, output_gif=None, frames_per_degree=1, resolution=(600, 600), verbose=False):
     """Renders a rotating 3D animation of a .ply file and saves it as a GIF."""
