@@ -7,9 +7,11 @@ import imageio
 from pathlib import Path
 from tqdm import tqdm
 
-def get_neuron_ply_files(path):
-    """Finds all 2.ply files in the neuron directories."""
-    return glob.glob(os.path.join(path, "neuron_*", "surfaces", "2.ply"))
+def get_cell_ply_files(path):
+    """Finds all 2.ply files in the cell directories."""
+    path = Path(path)
+    return path.glob("**/[0-9].ply")
+    # return glob.glob(os.path.join(path, "neuron_*", "surfaces", "2.ply"))
 
 def load_ply_mesh(path):
     """Loads a PLY file and returns vertices and faces."""
