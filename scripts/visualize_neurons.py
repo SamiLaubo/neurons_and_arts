@@ -1,5 +1,3 @@
-import os
-import glob
 import numpy as np
 import pyvista as pv
 from plyfile import PlyData
@@ -7,7 +5,6 @@ import imageio.v3 as imageio
 from pathlib import Path
 from tqdm import tqdm
 import math
-from PIL import Image
 
 def get_cell_ply_files(path):
     """Finds all 2.ply files in the cell directories."""
@@ -84,6 +81,7 @@ def create_rotation_gif(ply_path_idx, output_gif=None, frames_per_degree=1, reso
     """Renders a rotating 3D animation of a .ply file and saves it as a GIF."""
     ply_path, color_idx = ply_path_idx
     mesh = pv.read(ply_path)
+    mesh = mesh.extract_largest() # Keep only the largest connected component. Ie remove bnd box that messes up bck color
     if output_gif is None:
         output_gif = Path(ply_path).parent / "surface.gif"
     mass_center = calculate_mass_center(mesh)
@@ -106,66 +104,84 @@ def create_rotation_gif(ply_path_idx, output_gif=None, frames_per_degree=1, reso
         plotter.render()
         images.append(plotter.screenshot())
     plotter.close()
-    imageio.mimsave(output_gif, images, fps=10, loop=0)
+    imageio.imwrite(output_gif, images, fps=32, loop=0)
     if verbose:
         print(f"GIF saved to {output_gif}")
     return output_gif
 
-def create_combined_gif(gif_paths, output_path, N=None, start_idx=0, cell_type=None, resize_factor=1.0, frame_step=1, duration=0.1):
+def create_combined_gif(gif_paths, output_path, N, start_idx=0, resize_factor=1.0, frame_step=1, duration=0.1, verbal=False):
     """
     Combines N GIFs into a single grid GIF with optional downsampling.
 
     Args:
         gif_paths (list): List of paths to source GIF files.
         output_path (str/Path): Path to save the resulting grid GIF.
-        N (int, optional): Number of cells to include. Defaults to len(gif_paths).
+        N (int): Number of cells to include.
         start_idx (int): Starting index in gif_paths.
-        cell_type (str, optional): Filter gifs by this string (e.g., "astrocytes").
         resize_factor (float): Factor to scale dimensions (e.g., 0.5 for half size).
         frame_step (int): Step size for frames (e.g., 2 takes every second frame).
         duration (float): Duration of each frame in seconds.
     """
-    # Filter by cell type if provided
-    if cell_type:
-        gif_paths = [p for p in gif_paths if cell_type in str(p)]
-
-    if N is None:
-        N = len(gif_paths)
 
     selected_paths = gif_paths[start_idx : start_idx + N]
     if len(selected_paths) < N:
         print(f"Warning: Only found {len(selected_paths)} gifs, using all available.")
         N = len(selected_paths)
 
+    if N == 0:
+        print("No GIFs to combine.")
+        return None
+
     cols = math.ceil(math.sqrt(N))
     rows = math.ceil(N / cols)
 
-    print("Loading and preprocessing GIFs...")
-    all_gifs_frames = []
-    for p in selected_paths:
-        frames = imageio.imread(p)[::frame_step][:, ::int(1/resize_factor), ::int(1/resize_factor)]
-        all_gifs_frames.append(frames)
-
-    num_frames = min(len(f) for f in all_gifs_frames)
-    orig_h, orig_w = imageio.imread(selected_paths[0]).shape[1:3]
+    # Load first GIF to get dimensions and frame count
+    first_gif = imageio.imread(selected_paths[0])
+    orig_h, orig_w = first_gif.shape[1:3]
     h = int(orig_h * resize_factor)
     w = int(orig_w * resize_factor)
+    num_frames = len(first_gif[::frame_step])
 
-    print(f"Combining {N} gifs into a {rows}x{cols} grid...")
-    grid_frames = []
+    if verbal:
+        print(f"Combining {N} gifs into a {rows}x{cols} grid with {num_frames} frames...")
 
-    for i in range(num_frames):
-        canvas = np.zeros((rows * h, cols * w, 3), dtype=np.uint8)
-        for idx, frames in enumerate(all_gifs_frames):
-            r = idx // cols
-            c = idx % cols
+    # Pre-allocate the final result: a list of canvas arrays
+    # One canvas for each frame of the final animation
+    grid_frames = [np.zeros((rows * h, cols * w, 3), dtype=np.uint8) for _ in range(num_frames)]
+    
+    # Change to background of gif
+    for frame in grid_frames:
+        frame[:] = first_gif[0,0,0] # ex [17,17,22]
+
+    if not verbal:
+        rng = tqdm(enumerate(selected_paths), desc="Processing GIFs", colour="blue", total=len(selected_paths))
+    else:
+        rng = enumerate(selected_paths)
+
+    for idx, p in rng:
+        if verbal:
+            print(f"Processing GIF {idx + 1}/{N}: {p}")
+        # Load one GIF at a time and apply downsampling
+        frames = imageio.imread(p)[::frame_step, ::int(1 / resize_factor), ::int(1 / resize_factor)] # [frame, x, y]
+
+        r = idx // cols
+        c = idx % cols
+
+        # Insert frames into the pre-allocated canvases
+        for i in range(num_frames):
             frame_data = frames[i]
-            print(f'{frame_data.shape = }')
             if frame_data.shape[-1] == 4:
                 frame_data = frame_data[..., :3]
-            frame_data = frame_data
-            canvas[r*h : (r+1)*h, c*w : (c+1)*w] = frame_data
-        grid_frames.append(canvas)
 
+            # Ensure the frame fits exactly into the slot
+            fh, fw = frame_data.shape[0], frame_data.shape[1]
+            target_h = min(fh, h)
+            target_w = min(fw, w)
+
+            grid_frames[i][r*h : r*h + target_h, c*w : c*w + target_w] = frame_data[:target_h, :target_w]
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     imageio.imwrite(output_path, grid_frames, duration=duration, loop=0)
+    print(f"Saved combined GIF to {output_path}...")
     return output_path

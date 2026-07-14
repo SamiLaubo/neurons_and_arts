@@ -42,17 +42,33 @@ The workflow follows a sequence of steps from raw data configuration to physical
 - **FEniCSx**: For the EMI simulation.
 - **PyVista & ImageIO**: For visualization and GIF generation.
 
-### Setup conda env
+### Clone github
 ```bash
+git clone https://github.com/SamiLaubo/neurons_and_arts.git
 cd NEURONS_AND_ARTS
 git clone https://github.com/SamiLaubo/emimesh.git
+```
+
+### Setup conda env
+```bash
 conda create -c conda-forge -c bioconda -n snakemake snakemake snakemake-storage-plugin-http snakemake-executor-plugin-cluster-generic -y
+```
+Install some extra packages for visualization
+```bash
+conda activate snakemake
+conda install imageio ipywidgets ipykernel tqdm pip
+pip install pyvista[jupyter] plyfile
 ```
 
 ## Usage
 
-### Running the Meshing Pipeline
+1. Generate configurations with notebooks/generate_configs.ipynb
+2. Run EMIMesh pipeline to generate meshes
+3. Go through file_handling.ipynb to remove unwanted data
+4. Visualize results with visualize_cells.ipynb
+
+### Running the EMIMesh Pipeline
 To run a specific configuration:
 ```bash
-snakemake --use-conda --conda-create-envs-only --cores 8 --configfile config_files/single_neuron_processing/neuron_mip0_dx20_env4.yml
+snakemake --use-conda --cores 8 --configfile config_files/single_neuron_processing/neuron_mip0_dx20_env4.yml
 ```
