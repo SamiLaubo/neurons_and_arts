@@ -2,7 +2,6 @@
 
 This project implements a complete pipeline for extracting tetrahedral meshes of individual and grouped brain cell data and performing EMI simulations on those meshes.
 
-# Add gif
 ![Cell gif](gifs/all_10x10.gif)
 
 ## Overview
