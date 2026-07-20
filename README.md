@@ -47,7 +47,7 @@ The workflow follows a sequence of steps from raw data configuration to physical
 ### Clone github
 ```bash
 git clone https://github.com/SamiLaubo/neurons_and_arts.git
-cd NEURONS_AND_ARTS
+cd neurons_and_arts
 git clone https://github.com/SamiLaubo/emimesh.git
 ```
 
@@ -59,7 +59,7 @@ Install some extra packages for visualization
 ```bash
 conda activate snakemake
 conda install imageio ipywidgets ipykernel tqdm pip
-pip install pyvista[jupyter] plyfile
+pip install "pyvista[jupyter]" plyfile
 ```
 
 ## Usage
@@ -72,5 +72,5 @@ pip install pyvista[jupyter] plyfile
 ### Running the EMIMesh Pipeline
 To run a specific configuration:
 ```bash
-snakemake --use-conda --cores 8 --configfile config_files/single_neuron_processing/neuron_mip0_dx20_env4.yml
+snakemake --configfile config_files/neuron.yml --use-conda --cores 8
 ```
