@@ -22,7 +22,7 @@ def main():
         'emimesh',
         'results',
         'cells_cube_highres_volfrac',
-        'soma'
+        'branch'
     )
 
     # List to store data
@@ -98,8 +98,9 @@ def main():
     plt.tight_layout()
 
     # Save the plot
-    output_dir = os.path.dirname(__file__)
-    output_file = os.path.join(output_dir, 'volume_fraction_vs_ncells.png')
+    # output_dir = os.path.dirname(__file__)
+    # output_dir = os.path.dirname(__file__)
+    output_file = os.path.join(base_dir, 'volume_fraction_vs_ncells.png')
     plt.savefig(output_file, dpi=150)
     print(f"Plot saved to {output_file}")
 

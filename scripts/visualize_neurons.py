@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pyvista as pv
 from plyfile import PlyData
@@ -9,39 +10,9 @@ import math
 import yaml
 import h5py
 from PIL import Image
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def calculate_mass_center(mesh):
-    """Calculates the mass center (centroid) of a surface mesh."""
-    points = mesh.points
-    faces = mesh.faces.reshape(-1, 4)[:, 1:]
-    v0 = points[faces[:, 0]]
-    v1 = points[faces[:, 1]]
-    v2 = points[faces[:, 2]]
-    centroids = (v0 + v1 + v2) / 3.0
-    cross_prod = np.cross(v1 - v0, v2 - v0)
-    areas = 0.5 * np.linalg.norm(cross_prod, axis=1)
-    total_area = np.sum(areas)
-    if total_area == 0:
-        return np.mean(points, axis=0)
-    mass_center = np.sum(centroids * areas[:, np.newaxis], axis=0) / total_area
-    return mass_center
 
-def visualize_interactive_pyvista(ply_path):
-    """Displays an interactive 3D surface using PyVista."""
-    plotter = pv.Plotter()
-    update_interactive_plotter(plotter, ply_path)
-    return plotter.show()
-
-def update_interactive_plotter(plotter, ply_path):
-    """Updates an existing plotter with a new PLY surface."""
-    mesh = pv.read(ply_path)
-    mass_center = calculate_mass_center(mesh)
-    mesh.translate(-mass_center, inplace=True)
-    plotter.clear()
-    plotter.add_mesh(mesh, color="lightblue", show_edges=True, edge_color="black", edge_opacity=0.5)
-    plotter.set_background("black")
-    plotter.view_isometric()
-    plotter.render()
 
 COLORS = [
     "antiquewhite", "aqua", "aquamarine", "beige", "bisque", "blanchedalmond", "blue",
@@ -64,6 +35,22 @@ COLORS = [
     "silver", "skyblue", "slateblue", "snow", "springgreen", "steelblue", "tan", "teal",
     "thistle", "tomato", "turquoise", "violet", "wheat", "white", "yellow", "yellowgreen"
 ]
+
+def calculate_mass_center(mesh):
+    """Calculates the mass center (centroid) of a surface mesh."""
+    points = mesh.points
+    faces = mesh.faces.reshape(-1, 4)[:, 1:]
+    v0 = points[faces[:, 0]]
+    v1 = points[faces[:, 1]]
+    v2 = points[faces[:, 2]]
+    centroids = (v0 + v1 + v2) / 3.0
+    cross_prod = np.cross(v1 - v0, v2 - v0)
+    areas = 0.5 * np.linalg.norm(cross_prod, axis=1)
+    total_area = np.sum(areas)
+    if total_area == 0:
+        return np.mean(points, axis=0)
+    mass_center = np.sum(centroids * areas[:, np.newaxis], axis=0) / total_area
+    return mass_center
 
 def create_rotation_mp4_from_h5(h5_path_idx, output_mp4=None, length_sec=20, resolution=(1024, 1024), verbose=False, fps=16):
     """Renders a rotating 3D animation of a mesh loaded from an HDF5 file and saves it as an MP4.
@@ -94,7 +81,7 @@ def create_rotation_mp4_from_h5(h5_path_idx, output_mp4=None, length_sec=20, res
     
     plotter = pv.Plotter(off_screen=True, window_size=resolution)
     plotter.add_mesh(surf, color=COLORS[color_idx % len(COLORS)])
-    plotter.set_background("#111106ff")
+    plotter.set_background("#000000") # #111106ff
     plotter.view_isometric()
     plotter.camera.focal_point = (0, 0, 0)
     
@@ -132,16 +119,6 @@ def create_rotation_mp4_from_h5(h5_path_idx, output_mp4=None, length_sec=20, res
         
     return output_mp4
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import math
-import os
-from pathlib import Path
-import imageio
-import imageio.v3 as imageio_v3
-import numpy as np
-from PIL import Image
-from tqdm import tqdm
-
 def _process_single_file(p, r, c, cell_w, cell_h, frame_step, target_num_frames):
     """
     Worker function to read, step, and resize frames for a single video/GIF.
@@ -169,7 +146,7 @@ def _process_single_file(p, r, c, cell_w, cell_h, frame_step, target_num_frames)
 
 
 def create_combined_mp4(
-    gif_paths, 
+    mp4_paths, 
     output_path, 
     N, 
     start_idx=0, 
@@ -182,7 +159,7 @@ def create_combined_mp4(
     """
     Combines N MP4s/GIFs into a single grid MP4 using multi-threaded parallel processing.
     """
-    selected_paths = gif_paths[start_idx : start_idx + N]
+    selected_paths = mp4_paths[start_idx : start_idx + N]
     if len(selected_paths) < N:
         print(f"Warning: Only found {len(selected_paths)} files, using all available.")
         N = len(selected_paths)
@@ -278,13 +255,13 @@ def create_combined_mp4(
     print(f"Saved combined MP4 to {output_path}...")
     return output_path
 
-def create_volume_gif(
+def create_volume_mp4(
     result_folder,
-    output_gif=None,
     primary_opacity=1.0,
     other_opacity=0.2,
-    frames_per_degree=1,
-    resolution=(800, 800),
+    length_sec=20,
+    fps=16,
+    resolution=(1024, 1024),
     verbose=False,
     cell_type="neuron",
     cell_type_other=None,
@@ -294,15 +271,16 @@ def create_volume_gif(
 
 ):
     """
-    Creates a rotating 3D animation GIF from a volumetric mesh where neurons
+    Creates a rotating 3D animation MP4 from a volumetric mesh where neurons
     are rendered at full opacity and other cells at low opacity.
 
     Args:
         result_folder (str/Path): Path to the result folder containing meshes/ and processed/
-        output_gif (str/Path): Output GIF path (default: <result_folder>/volume_fraction.gif)
+        output_mp4 (str/Path): Output MP4 path (default: <result_folder>/volume_fraction.mp4)
         primary_opacity (float): Opacity for neuron cells (0-1)
         other_opacity (float): Opacity for non-neuron cells (0-1)
-        frames_per_degree (float): Number of frames per degree of rotation
+        length_sec (float): Length of the animation in seconds
+        fps (int): Frames per second for the output MP4
         resolution (tuple): Window size for rendering
         verbose (bool): Print progress information
         cell_type (str): Cell type to highlight (default: "neuron").
@@ -310,7 +288,7 @@ def create_volume_gif(
         other_color (tuple): Color for other cells (R, G, B)
         post_str (str): Additional string to append to the output file name
     Returns:
-        Path: Path to the created GIF
+        Path: Path to the created MP4
     """
     result_folder = Path(result_folder)
     meshes_dir = result_folder / 'meshes'
@@ -345,6 +323,10 @@ def create_volume_gif(
     if cell_type == "all":
         neuron_ids = {int(k) for k, v in cell_type_mapping.items() if v != 'extracellular'}
         other_ids = set()
+    elif cell_type == "other":
+        cell_types = ["neuron", "astrocyte", "microglia", "extracellular"]
+        neuron_ids = {int(k) for k, v in cell_type_mapping.items() if v not in cell_types}
+        other_ids = set()
     else:
         if cell_type_other is not None:
             neuron_ids = {int(k) for k, v in cell_type_mapping.items() if v == cell_type}
@@ -361,7 +343,7 @@ def create_volume_gif(
 
     # Set up plotter
     plotter = pv.Plotter(off_screen=True, window_size=resolution)
-    plotter.set_background("#111106ff") # #111106ff
+    plotter.set_background("#000000") # #111106ff
 
     # Add each cell as a separate mesh
     for cell_id in tqdm(cell_ids_to_show, desc="Cells", colour="green"):
@@ -386,10 +368,10 @@ def create_volume_gif(
     plotter.view_isometric()
     plotter.camera.focal_point = (0, 0, 0)
 
-    if output_gif is None:
-        output_gif = result_folder / "meshes" / f'volume_{cell_type}{post_str}.gif'
+    output_mp4 = result_folder / "meshes" / f'volume_{cell_type}{post_str}.mp4'
 
-    frames = int(360 * frames_per_degree)
+    # frames = int(360 * frames_per_degree)
+    frames = int(length_sec * fps)
     images = []
 
     rng = tqdm(range(frames), desc="Frames", colour="green") if verbose else range(frames)
@@ -402,93 +384,29 @@ def create_volume_gif(
         images.append(plotter.screenshot())
 
     plotter.close()
-    imageio.imwrite(output_gif, images, fps=16, loop=0)
+    images = np.stack(images, axis=0)  # Convert list of images to a 4D numpy array
+    imageio.mimwrite(
+        output_mp4, 
+        images, 
+        fps=fps,
+        codec='libx264', 
+        pixelformat='yuv420p'
+    )
 
     if verbose:
-        print(f"GIF saved to {output_gif}")
-    return output_gif
+        print(f"GIF saved to {output_mp4}")
+    return output_mp4
 
 if __name__ == "__main__":
     path = Path("../emimesh/results/cells_cube_highres/branch/size10000_ncells550_0")
 
-    resolution = (512, 512)
-    frames_per_degree = 1.0
-
     # Solid
-    for cell_type in ["astrocyte", "microglia", "neuron", "all"]:
-        gif = create_volume_gif(
+    for cell_type in ["astrocyte", "microglia", "neuron", "other", "all"]:
+    # for cell_type in ["other"]:
+        gif = create_volume_mp4(
             result_folder=path,
             primary_opacity=1.0,
             other_opacity=0.0,
-            resolution=resolution,
             verbose=True,
-            frames_per_degree=frames_per_degree,
             cell_type=cell_type,
         )
-
-    # neuron red, astrocyte blue
-    # gif = create_volume_gif(
-    #     result_folder=path,
-    #     primary_opacity=1.0,
-    #     other_opacity=0.7,
-    #     resolution=resolution,
-    #     verbose=True,
-    #     frames_per_degree=frames_per_degree,
-    #     cell_type="neuron",
-    #     cell_type_other="astrocyte",
-    #     post_str="_red_blue",
-    #     primary_color="red",
-    #     other_color="blue",
-    # )
-
-    # gif = create_volume_gif(
-    #     result_folder=path,
-    #     primary_opacity=1.0,
-    #     other_opacity=1.0,
-    #     resolution=resolution,
-    #     verbose=True,
-    #     frames_per_degree=frames_per_degree,
-    #     cell_type="neuron",
-    #     cell_type_other="astrocyte",
-    #     post_str="_red_blue_solid",
-    #     primary_color="red",
-    #     other_color="blue",
-    # )
-
-    # neuron red, other
-    # gif = create_volume_gif(
-    #     result_folder=path,
-    #     primary_opacity=1.0,
-    #     other_opacity=0.2,
-    #     resolution=resolution,
-    #     verbose=True,
-    #     frames_per_degree=frames_per_degree,
-    #     cell_type="neuron",
-    #     post_str="_red",
-    #     primary_color="red",
-    # )
-
-    # extracellular
-    # gif = create_volume_gif(
-    #     result_folder=path,
-    #     primary_opacity=0.8,
-    #     other_opacity=0.0,
-    #     resolution=resolution,
-    #     verbose=True,
-    #     frames_per_degree=frames_per_degree,
-    #     cell_type="extracellular",
-    #     # post_str="_red",
-    #     primary_color="blue",
-    # )
-
-    # for cell_type in ["astrocyte", "microglia", "neuron", "all"]:
-    #     gif = create_volume_gif(
-    #         result_folder=path,
-    #         primary_opacity=.9,
-    #         other_opacity=0.1,
-    #         resolution=(256, 256),
-    #         verbose=True,
-    #         frames_per_degree=2.0,
-    #         cell_type=cell_type,
-    #         post_str="_opacity0901"
-    #     )
