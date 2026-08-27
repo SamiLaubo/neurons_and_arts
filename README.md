@@ -3,8 +3,7 @@
 <!-- This project implements a complete pipeline for extracting tetrahedral meshes of individual and grouped brain cell data and performing EMI simulations on those meshes. -->
 Pipeline for automatic generation of single cell and dense brain tissue meshes from the [MICroNS](https://www.microns-explorer.org/cortical-mm3) dataset using [EMI-Meshing](https://github.com/scientificcomputing/EMI-Meshing).
 
-<!-- ![Cells](videos/all_15x15.mp4) -->
-<video autoplay loop>
+<video controls autoplay loop>
   <source src="videos/all_15x15.mp4" type="video/mp4">
   Your browser does not support the video tag.
 </video>
