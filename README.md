@@ -1,28 +1,28 @@
 # neurons_and_arts
 
-This project implements a complete pipeline for extracting tetrahedral meshes of individual and grouped brain cell data and performing EMI simulations on those meshes.
+<!-- This project implements a complete pipeline for extracting tetrahedral meshes of individual and grouped brain cell data and performing EMI simulations on those meshes. -->
+Pipeline for automatic generation of single cell and dense brain tissue meshes from the [MICroNS](https://www.microns-explorer.org/cortical-mm3) dataset using [EMI-Meshing](https://github.com/scientificcomputing/EMI-Meshing).
 
-![Cell gif](gifs/all_10x10.gif)
+![Cells](videos/all_15x15.mp4)
 
 ## Overview
 
 The workflow follows a sequence of steps from raw data configuration to physical simulation:
 
 ### 1. Configuration Generation
-**Notebooks:** `notebooks/generate_configs.ipynb`
+**Notebook:** `notebooks/generate_configs.ipynb`
 - Define cell types (neurons, astrocytes, microglia, etc.), resolutions (MIP levels), and image processing parameters.
-- Generate `.yml` configuration files that drive the EMIMesh pipeline.
-- Design parameter suites for sensitivity analysis (Resolution, Morphological Radius, Smoothing).
+- Generate `.yml` configuration files that drive the EMI-Meshing pipeline.
 
-### 2. Meshing (EMIMesh)
-**Tool:** EMIMesh (https://github.com/scientificcomputing/emimesh)
+### 2. Meshing (EMI-Meshing)
+**Tool:** EMI-Meshing (https://github.com/scientificcomputing/emimesh)
 - Process the generated configs to download raw EM data and generate tetrahedral meshes.
 - Produce `.xdmf` mesh files.
 
 ### 3. Dataset Curation
 **Notebook:** `notebooks/file_handling.ipynb`
-- Prune failed meshes and remove redundant raw data (`.vti` files) to optimize storage.
-- Sync datasets from the server to local environments and package them for distribution.
+- Prune failed meshes and remove redundant data files optimize storage.
+- Sync datasets from a server to local environments and package them for distribution.
 
 ### 4. Parameter Analysis & Validation
 **Notebook:** `notebooks/analyze_neuron_processing.ipynb`
@@ -31,8 +31,8 @@ The workflow follows a sequence of steps from raw data configuration to physical
 
 ### 5. Visualization
 **Notebook:** `notebooks/visualize_cells.ipynb`
-- Visualize the 3D surfaces of reconstructed cells.
-- Generate rotating GIFs of individual cells and grid-view composites of multiple cells.
+- Visualize the 3D meshes of reconstructed cells.
+- Generate rotating GIFs of individual cells and cell cubes.
 
 ---
 
@@ -40,7 +40,7 @@ The workflow follows a sequence of steps from raw data configuration to physical
 
 ### Basic Requirements:
 - **Conda**: For environment management.
-- **Snakemake**: For driving the EMIMesh pipeline.
+- **Snakemake**: For driving the EMI-Meshing pipeline.
 - **FEniCSx**: For the EMI simulation.
 - **PyVista & ImageIO**: For visualization and GIF generation.
 
@@ -65,11 +65,11 @@ pip install "pyvista[jupyter]" plyfile
 ## Usage
 
 1. Generate configurations with notebooks/generate_configs.ipynb
-2. Run EMIMesh pipeline to generate meshes
+2. Run EMI-Meshing pipeline to generate meshes
 3. Go through file_handling.ipynb to remove unwanted data
 4. Visualize results with visualize_cells.ipynb
 
-### Running the EMIMesh Pipeline
+### Running the EMI-Meshing Pipeline
 To run a specific configuration:
 ```bash
 snakemake --configfile config_files/neuron.yml --use-conda --cores 8
