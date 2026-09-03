@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import pyvista as pv
-from plyfile import PlyData
 import imageio.v2 as imageio
 import imageio.v3 as imageio_v3
 from pathlib import Path
@@ -52,7 +51,7 @@ def calculate_mass_center(mesh):
     mass_center = np.sum(centroids * areas[:, np.newaxis], axis=0) / total_area
     return mass_center
 
-def create_rotation_mp4_from_h5(h5_path_idx, output_mp4=None, length_sec=20, resolution=(1024, 1024), verbose=False, fps=16):
+def create_rotation_mp4_from_h5(h5_path_idx, output_mp4=None, length_sec=20, resolution=(1024, 1024), verbose=False, fps=16, single_png=False, bck_white=False):
     """Renders a rotating 3D animation of a mesh loaded from an HDF5 file and saves it as an MP4.
     Expects the HDF5 to contain point coordinates in dataset 'data0' and cell connectivity in dataset 'data1'.
     The mesh is assumed to be a volume mesh (tetrahedral) from which the surface is extracted.
@@ -81,9 +80,19 @@ def create_rotation_mp4_from_h5(h5_path_idx, output_mp4=None, length_sec=20, res
     
     plotter = pv.Plotter(off_screen=True, window_size=resolution)
     plotter.add_mesh(surf, color=COLORS[color_idx % len(COLORS)])
-    plotter.set_background("#000000") # #111106ff
+    if bck_white:
+        plotter.set_background("#FFFFFF") # #111106ff
+    else:
+        plotter.set_background("#000000") # #111106ff
     plotter.view_isometric()
     plotter.camera.focal_point = (0, 0, 0)
+
+    if single_png:
+        plotter.show(screenshot=output_mp4.with_suffix('.png'))
+        plotter.close()
+        if verbose:
+            print(f"PNG saved to {output_mp4.with_suffix('.png')}")
+        return output_mp4.with_suffix('.png')
     
     frames = int(length_sec * fps)
     original_mesh = surf.copy()
@@ -119,13 +128,17 @@ def create_rotation_mp4_from_h5(h5_path_idx, output_mp4=None, length_sec=20, res
         
     return output_mp4
 
-def _process_single_file(p, r, c, cell_w, cell_h, frame_step, target_num_frames):
+def _process_single_file(p, r, c, cell_w, cell_h, frame_step, target_num_frames, single_png=False):
     """
     Worker function to read, step, and resize frames for a single video/GIF.
     Executed concurrently in separate threads.
     """
     try:
-        frames = imageio_v3.imread(p)[::frame_step]
+        if single_png:
+            frames = imageio_v3.imread(p.with_suffix('.png'))
+            frames = np.expand_dims(frames, axis=0)  # Add a frame dimension
+        else:
+            frames = imageio_v3.imread(p)[::frame_step]
     except Exception as e:
         print(f"Error loading {p}: {e}")
         return r, c, None
@@ -155,9 +168,10 @@ def create_combined_mp4(
     verbal=False, 
     final_resolution=1024,
     max_workers=None,
+    single_png=False
 ):
     """
-    Combines N MP4s/GIFs into a single grid MP4 using multi-threaded parallel processing.
+    Combines N MP4s into a single grid MP4 using multi-threaded parallel processing.
     """
     selected_paths = mp4_paths[start_idx : start_idx + N]
     if len(selected_paths) < N:
@@ -179,7 +193,12 @@ def create_combined_mp4(
     canvas_h = rows * cell_h
 
     # Inspect first video/GIF for frame count
-    first_frames = imageio_v3.imread(selected_paths[0])
+    if single_png:
+        first_frames = imageio_v3.imread(selected_paths[0].with_suffix('.png'))
+        # If it's a single PNG, we treat it as having 1 frame
+        first_frames = np.expand_dims(first_frames, axis=0)  # Add a frame dimension
+    else:
+        first_frames = imageio_v3.imread(selected_paths[0])
     num_frames = len(first_frames[::frame_step])
 
     if verbal:
@@ -213,7 +232,7 @@ def create_combined_mp4(
     # Process files concurrently
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(_process_single_file, p, r, c, cell_w, cell_h, frame_step, num_frames)
+            executor.submit(_process_single_file, p, r, c, cell_w, cell_h, frame_step, num_frames, single_png)
             for p, r, c in tasks
         ]
 
@@ -237,6 +256,13 @@ def create_combined_mp4(
 
                 # Safely slice both canvas and cell_frames to guarantee matching dimensions
                 grid_frames[:n_f, y_start:y_end, x_start:x_end] = cell_frames[:, :actual_h, :actual_w]
+
+    if single_png:
+        # If single PNG, save the first frame as a PNG
+        output_path = Path(output_path).with_suffix('.png')
+        Image.fromarray(grid_frames[0]).save(output_path)
+        print(f"Saved combined PNG to {output_path}...")
+        return output_path
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +294,8 @@ def create_volume_mp4(
     primary_color=None,
     other_color=None,
     post_str="",
+    single_png=False,
+    bck_white=False
 
 ):
     """
@@ -287,6 +315,8 @@ def create_volume_mp4(
         primary_color (tuple): Color for primary cells (R, G, B)
         other_color (tuple): Color for other cells (R, G, B)
         post_str (str): Additional string to append to the output file name
+        single_png (bool): If True, save a single PNG instead of an MP4
+        bck_white (bool): If True, use a white background
     Returns:
         Path: Path to the created MP4
     """
@@ -333,7 +363,10 @@ def create_volume_mp4(
             other_ids = {int(k) for k, v in cell_type_mapping.items() if v == cell_type_other}
         else:
             neuron_ids = {int(k) for k, v in cell_type_mapping.items() if v == cell_type}
-            other_ids = {int(k) for k, v in cell_type_mapping.items() if v != cell_type and v != 'extracellular'}
+            if other_opacity > 0:
+                other_ids = {int(k) for k, v in cell_type_mapping.items() if v != cell_type and v != 'extracellular'}
+            else:
+                other_ids = set()
     cell_ids_to_show = neuron_ids | other_ids
 
     # Assign a unique color from COLORS to each cell id
@@ -343,7 +376,10 @@ def create_volume_mp4(
 
     # Set up plotter
     plotter = pv.Plotter(off_screen=True, window_size=resolution)
-    plotter.set_background("#000000") # #111106ff
+    if bck_white:
+        plotter.set_background("#FFFFFF") # #111106ff
+    else:
+        plotter.set_background("#000000") # #111106ff
 
     # Add each cell as a separate mesh
     for cell_id in tqdm(cell_ids_to_show, desc="Cells", colour="green"):
@@ -369,6 +405,13 @@ def create_volume_mp4(
     plotter.camera.focal_point = (0, 0, 0)
 
     output_mp4 = result_folder / "meshes" / f'volume_{cell_type}{post_str}.mp4'
+
+    if single_png:
+        output_mp4 = output_mp4.with_suffix('.png')
+        plotter.show(screenshot=output_mp4)
+        plotter.close()
+        print(f"PNG saved to {output_mp4}")
+        return output_mp4
 
     # frames = int(360 * frames_per_degree)
     frames = int(length_sec * fps)
